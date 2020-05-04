@@ -83,11 +83,11 @@ async def async_setup(hass, config):
     async def async_get_sems_data(event_time):   
         """Get the topics from the SEMS API and send to the MQTT Broker."""
 
-        def getCurrentReadings(station_id):
+        async def getCurrentReadings(station_id):
             ''' Download the most recent readings from the GoodWe API. '''
             status = { -1 : 'Offline', 0 : 'Waiting', 1 : 'Online', None : 'Unknown' }
             payload = {'powerStationId' : station_id}
-            data = call("v1/PowerStation/GetMonitorDetailByPowerstationId", payload)
+            data = await call("v1/PowerStation/GetMonitorDetailByPowerstationId", payload)
             inverterData = data['inverter'][0]['invert_full']
             result = {
                     'type'  : inverterData['model_type'],
@@ -105,7 +105,10 @@ async def async_setup(hass, config):
             
             return result
 
-        def call(url, payload):
+        def issuePost(url, headers, payload, timeout):
+            return requests.post(url, headers=headers, data=payload, timeout=timeout)
+
+        async def call(url, payload):
             token = '{"version":"","client":"web","language":"en"}'
             global_url = 'https://eu.semsportal.com/api/'
             base_url = global_url
@@ -113,7 +116,7 @@ async def async_setup(hass, config):
                 try:
                     headers = {'Token': token }
 
-                    r = requests.post(base_url + url, headers=headers, data=payload, timeout=20)
+                    r = await hass.async_add_executor_job(issuePost, base_url + url, headers, payload, 20)
                     r.raise_for_status()
                     data = r.json()
 
@@ -121,7 +124,7 @@ async def async_setup(hass, config):
                         return data['data']
                     else:
                         loginPayload = { 'account': account, 'pwd': password }
-                        r = requests.post(global_url + 'v1/Common/CrossLogin', headers=headers, data=loginPayload, timeout=20)
+                        r = await hass.async_add_executor_job(issuePost, global_url + 'v1/Common/CrossLogin', headers, loginPayload, 20)
                         r.raise_for_status()
                         data = r.json()
                         base_url = data['api']
@@ -142,7 +145,7 @@ async def async_setup(hass, config):
             station = station_id
             user = username
 
-            data = getCurrentReadings(station)
+            data = await getCurrentReadings(station)
 
             payload_type =          {
                                     'name':'sems_inverter_type',
