@@ -3,6 +3,7 @@ Home Assistant component for accessing the GoodWe SEMS Portal API.
 Adapted from https://github.com/TimSoethout/goodwe-sems-home-assistant but altered to use the SEMS API.
 API adaption by hesselonline, heavily inspired by https://github.com/markruys/gw2pvo.
 Adapted furthermore by bouwew, using MQTT messages using HA-discovery to create separate sensors.
+VIDEGRO added some more sensors: DC voltage/current and AC current (grid), added the possibility to configure the MQTT state topic and removed some duplicated code.
 
 NOTE: this component requires an MQTT-broker to be present in your network.
 There is one available in the Hassio Official Add-ons.
@@ -20,6 +21,7 @@ sems2mqtt:
   password: password2           sems password
   station_id: your-station-ID   see remark below
   client: sems2mqtt             (optional, MQTT cient-id, default is 'sems2mqtt')
+  state_topic: sems/sensors      The MQTT topic to post to (optional, default is 'sems/sensors')
   scan_interval: 150            (optional, default is 300 seconds, keep to 300 seconds or less!)
 ```
 * If you are using the SEMS Portal app on Android or IOS, it is strongly suggested to create a Visitor account with a different email address and use the credentials of the Visitor account for this custom_component. In the Adroid app, a visitor account can be added on the 'Modify Plant Info' page, scroll down to the bottom of the page to find the 'add visitor'-button.
