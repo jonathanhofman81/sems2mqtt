@@ -37,6 +37,7 @@ from homeassistant.helpers.entity import Entity
 __version__ = '0.1.10'
 
 _LOGGER = logging.getLogger(__name__)
+_DEBUG = 0
 
 CONF_BROKER = 'broker'
 CONF_BROKER_USERNAME = 'broker_user'
@@ -89,6 +90,12 @@ async def async_setup(hass, config):
             payload = {'powerStationId' : station_id}
             data = await call("v2/PowerStation/GetMonitorDetailByPowerstationId", payload)
             inverterData = data['inverter'][0]['invert_full']
+
+            global _DEBUG
+            if _DEBUG == 1:
+             with open('/tmp/data_sems.json', 'w') as outfile:
+              json.dump(data, outfile)
+
             result = {
                     'type'  : inverterData['model_type'],
                     'status'  : status[inverterData['status']],
