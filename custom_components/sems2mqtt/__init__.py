@@ -19,6 +19,8 @@ sems2mqtt:
 """
 
 import json
+import asyncio
+import aiohttp
 import logging
 import time
 from datetime import datetime, timedelta
@@ -120,40 +122,93 @@ async def async_setup(hass, config):
             
             return result
 
-        def issuePost(url, headers, payload, timeout):
-            return requests.post(url, headers=headers, data=payload, timeout=timeout)
+        # def issuePost(url, headers, payload, timeout):
+        #     _LOGGER.debug(f"issuePost:\nurl:{url}\nheaders: {headers}\npayload: {payload}\ntimeout:{timeout}")
+        #     result = requests.post(url, headers=headers, data=payload, timeout=timeout)
+        #     data = result.json()
+        #     _LOGGER.debug(f"issuePost result: {result}\n{data}")           
+        #     return result
+
+        async def issueSemsApiPost(url, headers=None, data=None):
+            async with aiohttp.request('POST', url, headers=headers, data=data) as resp:
+                _LOGGER.debug(f"issueSemsApiPost:\nurl:{url}\nheaders: {headers}\ndata: {data}\n")
+                if not resp.status == 200:
+                    _LOGGER.error("SEMS API didn't return 200")
+                    raise Exception("SEMS API didn't return 200")
+                #print(await resp.text())
+                json = await resp.json()
+                _LOGGER.debug(f"issueSemsApiPost result: {resp}\ndata: {json}")           
+                if json["msg"].lower() != "success":
+                    _LOGGER.error("SEMS API didn't return Success")
+                    raise Exception("SEMS API didn't return Success")
+                #print(json)
+                #print(await resp.json())
+                return json
 
         async def call(url, payload):
-            token = '{"version":"","client":"web","language":"en"}'
-            global_url = 'https://eu.semsportal.com/api/'
-            base_url = global_url
-            for i in range(1, 4):
-                try:
-                    headers = {'Token': token }
+            try:
+                #station_id = "4ad5a81f-a3a5-43f9-9f02-b9389fc39e94"
+                #account = 'jonathan.sems-ha@jghp.net'
+                #password = 'w1nXIE5c8T1yBFI5'
 
-                    r = await hass.async_add_executor_job(issuePost, base_url + url, headers, payload, 20)
-                    r.raise_for_status()
-                    data = r.json()
+                # login
+                headers = {'Token': '{"version":"","client":"web","language":"en"}'}
+                data = { 'account': account, 'pwd': password }
+                resp = await issueSemsApiPost('https://eu.semsportal.com/api/v2/Common/CrossLogin', headers=headers, data=data)
+                #r = await resp.json()
+                #print(resp)
+                #print(resp['data'])
 
-                    if data['msg'] == 'success' and data['data'] is not None:
-                        return data['data']
-                    else:
-                        loginPayload = { 'account': account, 'pwd': password }
-                        r = await hass.async_add_executor_job(issuePost, global_url + 'v2/Common/CrossLogin', headers, loginPayload, 20)
-                        r.raise_for_status()
-                        data = r.json()
-                        base_url = data['api']
-                        token = json.dumps(data['data'])
-                except requests.exceptions.RequestException as exp:
-                    _LOGGER.warning(exp)
-                time.sleep((2*i) ** 2)
-            else:
+                # get data
+                headers = {'Token': str(resp['data'])}
+                data = {'powerStationId' : station_id}
+                resp = await issueSemsApiPost('https://eu.semsportal.com/api/v2/PowerStation/GetMonitorDetailByPowerstationId', headers=headers, data=data)
+                #r = await resp.json()
+                #print(resp)
+                return resp['data']
+            except:
                 _LOGGER.error("Failed to call SEMS API")
-
             return {}
+        
+            # token = '{"version":"","client":"web","language":"en"}'
+            # global_url = 'https://eu.semsportal.com/api/'
+            # base_url = global_url
+            # for i in range(1, 4):
+            #     try:
+            #         headers = {'Token': token }
+
+            #         _LOGGER.debug("issuePost")           
+            #         r = await hass.async_add_executor_job(issuePost, base_url + url, headers, payload, 20)
+            #         _LOGGER.debug("issuePost done")                               
+            #         r.raise_for_status()
+            #         data = r.json()
+
+            #         if data['msg'] == 'success' and data['data'] is not None:
+            #             return data['data']
+            #         else:
+            #             loginPayload = { 'account': account, 'pwd': password }
+            #             r = await hass.async_add_executor_job(issuePost, global_url + 'v2/Common/CrossLogin', headers, loginPayload, 20)
+            #             r.raise_for_status()
+            #             data = r.json()
+            #             base_url = data['api']
+            #             token = json.dumps(data['data'])
+            #     except requests.exceptions.RequestException as exp:
+            #         _LOGGER.warning(exp)
+            #     await asyncio.sleep((2*i) ** 2)
+            # else:
+            #     _LOGGER.error("Failed to call SEMS API")
+
+            # return {}
     
         """Get the topic-data from the SEMS API and send to the MQTT Broker."""
         _LOGGER.debug("update called.")
+
+        def publish_single(topic, payload):
+            return publish.single(topic, payload, qos=0, retain=True, hostname=broker, port=port, auth=auth, client_id=client, protocol=mqtt.MQTTv311)
+
+        async def publish_single_async(topic, payload):
+            #publish.single('homeassistant/sensor/sems/{}/config'.format(parameter), payload, qos=0, retain=True, hostname=broker, port=port, auth=auth, client_id=client, protocol=mqtt.MQTTv311)
+            return await hass.async_add_executor_job(publish_single, topic, payload)
 
         def create_device(model):
          return { 
@@ -306,11 +361,13 @@ async def async_setup(hass, config):
                         payload = "payload_"+str(parameter)
                         payload = locals()[payload]
                         payload = json.dumps(payload)
-                        publish.single('homeassistant/sensor/sems/{}/config'.format(parameter), payload, qos=0, retain=True, hostname=broker, port=port, auth=auth, client_id=client, protocol=mqtt.MQTTv311)
+                        #publish.single('homeassistant/sensor/sems/{}/config'.format(parameter), payload, qos=0, retain=True, hostname=broker, port=port, auth=auth, client_id=client, protocol=mqtt.MQTTv311)
+                        await publish_single_async('homeassistant/sensor/sems/{}/config'.format(parameter), payload)
             REGISTERED = 1
             payload = json.dumps(data)
             payload = payload.replace(": ", ":")
-            publish.single('sems/sensors', payload, qos=0, retain=True, hostname=broker, port=port, auth=auth, client_id=client, protocol=mqtt.MQTTv311)
+            #publish.single('sems/sensors', payload, qos=0, retain=True, hostname=broker, port=port, auth=auth, client_id=client, protocol=mqtt.MQTTv311)
+            await publish_single_async('sems/sensors', payload)
 
     async_track_time_interval(hass, async_get_sems_data, scan_interval)
 
